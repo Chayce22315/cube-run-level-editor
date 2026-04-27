@@ -49,7 +49,25 @@ jobs:
           name: CubeRun-Archive
           path: build/CubeRun.xcarchive
 
-      - name: Export IPA (attempt unsigned)
+      # Unsigned archives contain no development team; Xcode export always needs
+      # signing for an IPA. This zip is the account-free installable-ish output.
+      - name: Package unsigned app from archive
+        run: |
+          set -euo pipefail
+          APP=$(ls build/CubeRun.xcarchive/Products/Applications/*.app | head -n1)
+          echo "Zipping: $APP"
+          (cd "$(dirname "$APP")" && zip -qr "$GITHUB_WORKSPACE/build/CubeRunUnsignedApp.zip" "$(basename "$APP")")
+          ls -la build/CubeRunUnsignedApp.zip
+
+      - name: Upload unsigned app zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: CubeRun-UnsignedApp
+          path: build/CubeRunUnsignedApp.zip
+
+      # Best-effort only: succeeds only when the archive was signed with a team
+      # (not the case for CODE_SIGNING_ALLOWED=NO). Kept per project spec.
+      - name: Export IPA (requires signed archive / team)
         run: |
           cat > ExportOptions.plist <<'EOF'
           <?xml version="1.0" encoding="UTF-8"?>
@@ -57,7 +75,7 @@ jobs:
           <plist version="1.0">
           <dict>
               <key>method</key>
-              <string>development</string>
+              <string>debugging</string>
               <key>signingStyle</key>
               <string>manual</string>
               <key>stripSwiftSymbols</key>
@@ -71,7 +89,7 @@ jobs:
           xcodebuild -exportArchive \
             -archivePath build/CubeRun.xcarchive \
             -exportPath build \
-            -exportOptionsPlist ExportOptions.plist || echo "IPA export failed, continuing..."
+            -exportOptionsPlist ExportOptions.plist || echo "IPA export failed (expected without signing team), continuing..."
 
       - name: Upload IPA (if exists)
         uses: actions/upload-artifact@v4
