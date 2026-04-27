@@ -1,0 +1,7 @@
+build/
+*.xcarchive
+*.ipa
+ExportOptions.plist
+.DS_Store
+xcuserdata/
+*.xcuserstate
