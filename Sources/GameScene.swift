@@ -79,11 +79,7 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
                     n.position = CGPoint(x: x, y: y)
                     n.fillColor = SKColor(red: 0.95, green: 0.35, blue: 0.35, alpha: 1)
                     n.strokeColor = .clear
-                    n.physicsBody = SKPhysicsBody(polygonFrom: [
-                        CGPoint(x: -ts / 2 + 2, y: -ts / 2 + 2),
-                        CGPoint(x: ts / 2 - 2, y: -ts / 2 + 2),
-                        CGPoint(x: 0, y: ts / 2 - 2),
-                    ])
+                    n.physicsBody = SKPhysicsBody(polygonFrom: path as CGPath)
                     n.physicsBody?.isDynamic = false
                     n.physicsBody?.categoryBitMask = spikeCategory
                     n.physicsBody?.contactTestBitMask = playerCategory
@@ -225,7 +221,8 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
         if let solidBody = bodies.first(where: { $0.categoryBitMask == solidCategory }),
            let playerBody = bodies.first(where: { $0.categoryBitMask == playerCategory }),
            let solidNode = solidBody.node,
-           isPlayerOnTopOfSolid(playerBody: playerBody.node as? SKNode, solidBody: solidNode as? SKNode)
+           let playerSk = playerBody.node,
+           isPlayerOnTopOfSolid(playerBody: playerSk, solidBody: solidNode)
         {
             standingOnSolids.insert(ObjectIdentifier(solidNode))
         }
