@@ -54,7 +54,13 @@ jobs:
       - name: Package IPA from archive
         run: |
           set -euo pipefail
-          APP=$(ls build/CubeRun.xcarchive/Products/Applications/*.app | head -n1)
+          # *.app is a directory; plain `ls *.app` lists contents — resolve bundle path explicitly.
+          APP=$(find build/CubeRun.xcarchive/Products/Applications -maxdepth 1 -type d -name "*.app" | head -n1)
+          if [ -z "$APP" ]; then
+            echo "No .app bundle under archive Products/Applications"
+            ls -la build/CubeRun.xcarchive/Products/Applications || true
+            exit 1
+          fi
           echo "Packaging: $APP"
           rm -rf build/ipa-staging
           mkdir -p build/ipa-staging/Payload
