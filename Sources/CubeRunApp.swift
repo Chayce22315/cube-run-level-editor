@@ -1,8 +1,15 @@
 import SwiftUI
 import SpriteKit
+import UIKit
 
 @main
 struct CubeRunApp: App {
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+
+    init() {
+        FirebaseBootstrap.configureIfAvailable()
+    }
+
     var body: some Scene {
         WindowGroup {
             CubeRunRootView()
@@ -10,56 +17,138 @@ struct CubeRunApp: App {
     }
 }
 
-/// Owns the shared `LevelModel` and swaps SpriteKit scenes for build vs playtest.
+/// Owns local editor level, optional remote play copy, and SpriteKit scene switching.
 final class CubeRunSession: ObservableObject {
-    let level: LevelModel
+    /// Level used in the editor and local playtest (persisted).
+    let levelLocal: LevelModel
+
+    /// Snapshot loaded from Firestore for online playtest only.
+    private(set) var remotePlayLevel: LevelModel?
+    private(set) var remoteDocumentId: String?
+
     @Published private(set) var activeScene: SKScene?
 
+    @Published var showBrowseOnline = false
+    @Published var showPublishSheet = false
+    @Published var browseLoadError: String?
+
     init() {
-        level = LevelModel.loadFromDisk() ?? LevelModel()
+        levelLocal = LevelModel.loadFromDisk() ?? LevelModel()
     }
 
     func attachEditor(scene: EditorScene) {
         scene.onPlay = { [weak self, weak scene] in
             guard let self, let scene else { return }
-            self.presentPlaytest(size: scene.size)
+            self.clearRemotePlay()
+            self.presentLocalPlaytest(size: scene.size)
+        }
+        scene.onBrowseOnline = { [weak self] in
+            self?.showBrowseOnline = true
+        }
+        scene.onPublish = { [weak self] in
+            self?.showPublishSheet = true
         }
     }
 
     func presentEditor(size: CGSize) {
-        let scene = EditorScene(size: size, level: level)
+        clearRemotePlay()
+        let scene = EditorScene(size: size, level: levelLocal)
         scene.scaleMode = .resizeFill
         attachEditor(scene: scene)
         activeScene = scene
     }
 
-    func presentPlaytest(size: CGSize) {
-        let scene = GameScene(size: size, level: level)
+    func presentLocalPlaytest(size: CGSize) {
+        clearRemotePlay()
+        let scene = GameScene(size: size, level: levelLocal)
         scene.scaleMode = .resizeFill
+        scene.isRemoteLevel = false
+        scene.remoteDocumentId = nil
         scene.onExitToEditor = { [weak self, weak scene] in
             guard let self, let scene else { return }
             self.presentEditor(size: scene.size)
         }
         activeScene = scene
     }
+
+    func presentRemotePlaytest(size: CGSize, level: LevelModel, documentId: String) {
+        remotePlayLevel = level
+        remoteDocumentId = documentId
+        let scene = GameScene(size: size, level: level)
+        scene.scaleMode = .resizeFill
+        scene.isRemoteLevel = true
+        scene.remoteDocumentId = documentId
+        scene.onExitToEditor = { [weak self, weak scene] in
+            guard let self, let scene else { return }
+            self.clearRemotePlay()
+            self.presentEditor(size: scene.size)
+        }
+        activeScene = scene
+    }
+
+    func startOnlineLevel(documentId: String, size: CGSize) {
+        browseLoadError = nil
+        let playSize: CGSize = (size.width > 1 && size.height > 1) ? size : UIScreen.main.bounds.size
+        FirestoreLevelsService.shared.loadLevelForPlay(documentId: documentId) { [weak self] result in
+            guard let self else { return }
+            DispatchQueue.main.async {
+                switch result {
+                case let .success(level):
+                    self.showBrowseOnline = false
+                    self.presentRemotePlaytest(size: playSize, level: level, documentId: documentId)
+                case let .failure(err):
+                    self.browseLoadError = err.localizedDescription
+                }
+            }
+        }
+    }
+
+    private func clearRemotePlay() {
+        remotePlayLevel = nil
+        remoteDocumentId = nil
+    }
 }
 
 struct CubeRunRootView: View {
     @StateObject private var session = CubeRunSession()
+    @State private var containerSize: CGSize = .zero
 
     var body: some View {
         GeometryReader { geo in
-            SpriteKitHost(scene: session.activeScene)
-                .onAppear {
-                    if session.activeScene == nil {
-                        session.presentEditor(size: geo.size)
+            ZStack {
+                SpriteKitHost(scene: session.activeScene)
+                    .onAppear {
+                        containerSize = geo.size
+                        if session.activeScene == nil {
+                            session.presentEditor(size: geo.size)
+                        }
+                    }
+                    .onChange(of: geo.size) { newSize in
+                        containerSize = newSize
+                        session.activeScene?.size = newSize
+                    }
+
+                if let msg = session.browseLoadError {
+                    VStack {
+                        Text(msg)
+                            .padding(12)
+                            .background(.ultraThinMaterial)
+                            .cornerRadius(10)
+                            .padding()
+                        Spacer()
                     }
                 }
-                .onChange(of: geo.size) { newSize in
-                    session.activeScene?.size = newSize
-                }
+            }
         }
         .ignoresSafeArea()
+        .sheet(isPresented: $session.showBrowseOnline) {
+            BrowseLevelsView { docId in
+                session.startOnlineLevel(documentId: docId, size: containerSize)
+            }
+        }
+        .sheet(isPresented: $session.showPublishSheet) {
+            PublishLevelView(level: session.levelLocal)
+        }
     }
 }
 

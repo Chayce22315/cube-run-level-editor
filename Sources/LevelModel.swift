@@ -60,6 +60,27 @@ final class LevelModel {
         replayTapTimestampsMs.append(elapsedMs)
     }
 
+    // MARK: - Validation (publish / remote)
+
+    static func isValidGridArray(_ tiles: [Int]) -> Bool {
+        guard tiles.count == tileCount else { return false }
+        return tiles.allSatisfy { $0 == 0 || $0 == 1 || $0 == 2 }
+    }
+
+    /// Human-readable reason if publishing is not allowed, else `nil`.
+    static func validationErrorForPublishing(_ level: LevelModel) -> String? {
+        if !level.verified {
+            return "Beat your level in playtest before publishing."
+        }
+        if !isValidGridArray(level.tiles) {
+            return "Grid must be 20×10 with only empty, block, or spike tiles."
+        }
+        if level.replayTapTimestampsMs.isEmpty {
+            return "Replay data is missing. Playtest and complete the level once."
+        }
+        return nil
+    }
+
     // MARK: - Persistence (local only)
 
     private struct PersistedLevel: Codable {

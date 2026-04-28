@@ -8,6 +8,8 @@ import UIKit
 final class EditorScene: SKScene {
     private weak var levelRef: LevelModel?
     var onPlay: (() -> Void)?
+    var onBrowseOnline: (() -> Void)?
+    var onPublish: (() -> Void)?
 
     private let gridContainer = SKNode()
     private var panOffsetX: CGFloat = 0
@@ -25,6 +27,8 @@ final class EditorScene: SKScene {
     private var playButton: SKNode!
     private var saveButton: SKNode!
     private var clearButton: SKNode!
+    private var publishButton: SKNode!
+    private var browseButton: SKNode!
     private var blockButton: SKNode!
     private var spikeButton: SKNode!
     private var eraseButton: SKNode!
@@ -69,14 +73,21 @@ final class EditorScene: SKScene {
         let th = layoutGridRect.height / CGFloat(LevelModel.rows)
         tileSize = min(tw, th)
 
-        [playButton, saveButton, clearButton, blockButton, spikeButton, eraseButton].compactMap { $0 }.forEach { $0.removeFromParent() }
+        [playButton, saveButton, clearButton, publishButton, browseButton, blockButton, spikeButton, eraseButton]
+            .compactMap { $0 }
+            .forEach { $0.removeFromParent() }
 
-        playButton = makeBarButton(text: "▶️ Play", position: CGPoint(x: w * 0.2, y: h - 28), name: "hud:play")
-        saveButton = makeBarButton(text: "💾 Save", position: CGPoint(x: w * 0.5, y: h - 28), name: "hud:save")
-        clearButton = makeBarButton(text: "🗑️ Clear", position: CGPoint(x: w * 0.8, y: h - 28), name: "hud:clear")
+        let topY = h - 26
+        playButton = makeBarButton(text: "▶️ Play", position: CGPoint(x: w * 0.11, y: topY), name: "hud:play", width: 96)
+        saveButton = makeBarButton(text: "💾 Save", position: CGPoint(x: w * 0.30, y: topY), name: "hud:save", width: 96)
+        clearButton = makeBarButton(text: "🗑️ Clear", position: CGPoint(x: w * 0.49, y: topY), name: "hud:clear", width: 96)
+        publishButton = makeBarButton(text: "🌍 Publish", position: CGPoint(x: w * 0.68, y: topY), name: "hud:publish", width: 108)
+        browseButton = makeBarButton(text: "🌍 Levels", position: CGPoint(x: w * 0.89, y: topY), name: "hud:browse", width: 108)
         addChild(playButton)
         addChild(saveButton)
         addChild(clearButton)
+        addChild(publishButton)
+        addChild(browseButton)
 
         blockButton = makeToolButton(label: "Block", position: CGPoint(x: w * 0.22, y: 36), name: "tool:block")
         spikeButton = makeToolButton(label: "Spike", position: CGPoint(x: w * 0.5, y: 36), name: "tool:spike")
@@ -93,23 +104,25 @@ final class EditorScene: SKScene {
         playButton.zPosition = hz
         saveButton.zPosition = hz
         clearButton.zPosition = hz
+        publishButton.zPosition = hz
+        browseButton.zPosition = hz
         blockButton.zPosition = hz
         spikeButton.zPosition = hz
         eraseButton.zPosition = hz
     }
 
-    private func makeBarButton(text: String, position: CGPoint, name: String) -> SKNode {
+    private func makeBarButton(text: String, position: CGPoint, name: String, width: CGFloat = 104) -> SKNode {
         let root = SKNode()
         root.position = position
         root.name = name
-        let bg = SKShapeNode(rect: CGRect(x: -52, y: -18, width: 104, height: 36), cornerRadius: 8)
+        let bg = SKShapeNode(rect: CGRect(x: -width / 2, y: -18, width: width, height: 36), cornerRadius: 8)
         bg.name = name
         bg.fillColor = SKColor(white: 0.22, alpha: 1)
         bg.strokeColor = .clear
         let label = SKLabelNode(text: text)
         label.name = name
         label.fontName = "Helvetica"
-        label.fontSize = 14
+        label.fontSize = 12
         label.verticalAlignmentMode = .center
         label.horizontalAlignmentMode = .center
         label.fontColor = .white
@@ -257,6 +270,12 @@ final class EditorScene: SKScene {
             case "hud:clear":
                 levelRef?.clearGrid()
                 rebuildGridVisuals()
+                return true
+            case "hud:publish":
+                onPublish?()
+                return true
+            case "hud:browse":
+                onBrowseOnline?()
                 return true
             case "tool:block":
                 selectedTool = 1

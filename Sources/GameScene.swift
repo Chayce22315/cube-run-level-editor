@@ -10,6 +10,11 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
     private weak var levelRef: LevelModel?
     var onExitToEditor: (() -> Void)?
 
+    /// When set, level is from Firestore: do not write `UserDefaults`, do not mark verified locally, increment plays once.
+    var isRemoteLevel = false
+    var remoteDocumentId: String?
+    private var didIncrementRemotePlays = false
+
     private static let physicsTileSize: CGFloat = 40
 
     private let worldNode = SKNode()
@@ -47,6 +52,11 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
 
         level.beginPlaytestRecording()
         playStartMonotonicMs = Self.nowMs()
+
+        if isRemoteLevel, let docId = remoteDocumentId, !didIncrementRemotePlays {
+            didIncrementRemotePlays = true
+            FirestoreLevelsService.shared.incrementPlays(documentId: docId, completion: nil)
+        }
 
         let ts = Self.physicsTileSize
         let cols = LevelModel.columns
@@ -260,7 +270,9 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
     private func completeLevel() {
         guard !finished else { return }
         finished = true
-        levelRef?.markVerified()
+        if !isRemoteLevel {
+            levelRef?.markVerified()
+        }
         persistAndExit()
     }
 
@@ -271,7 +283,9 @@ final class GameScene: SKScene, SKPhysicsContactDelegate {
     }
 
     private func persistAndExit() {
-        levelRef?.saveToDisk()
+        if !isRemoteLevel {
+            levelRef?.saveToDisk()
+        }
         onExitToEditor?()
     }
 
