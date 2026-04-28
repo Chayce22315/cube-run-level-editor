@@ -49,51 +49,22 @@ jobs:
           name: CubeRun-Archive
           path: build/CubeRun.xcarchive
 
-      # Unsigned archives contain no development team; Xcode export always needs
-      # signing for an IPA. This zip is the account-free installable-ish output.
-      - name: Package unsigned app from archive
+      # IPA built manually (Payload/*.app + zip). No xcodebuild -exportArchive;
+      # that path requires signing metadata in the archive.
+      - name: Package IPA from archive
         run: |
           set -euo pipefail
           APP=$(ls build/CubeRun.xcarchive/Products/Applications/*.app | head -n1)
-          echo "Zipping: $APP"
-          (cd "$(dirname "$APP")" && zip -qr "$GITHUB_WORKSPACE/build/CubeRunUnsignedApp.zip" "$(basename "$APP")")
-          ls -la build/CubeRunUnsignedApp.zip
+          echo "Packaging: $APP"
+          rm -rf build/ipa-staging
+          mkdir -p build/ipa-staging/Payload
+          cp -R "$APP" build/ipa-staging/Payload/
+          (cd build/ipa-staging && zip -qr ../CubeRun.ipa Payload)
+          rm -rf build/ipa-staging
+          ls -la build/CubeRun.ipa
 
-      - name: Upload unsigned app zip
-        uses: actions/upload-artifact@v4
-        with:
-          name: CubeRun-UnsignedApp
-          path: build/CubeRunUnsignedApp.zip
-
-      # Best-effort only: succeeds only when the archive was signed with a team
-      # (not the case for CODE_SIGNING_ALLOWED=NO). Kept per project spec.
-      - name: Export IPA (requires signed archive / team)
-        run: |
-          cat > ExportOptions.plist <<'EOF'
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-              <key>method</key>
-              <string>debugging</string>
-              <key>signingStyle</key>
-              <string>manual</string>
-              <key>stripSwiftSymbols</key>
-              <true/>
-              <key>compileBitcode</key>
-              <false/>
-          </dict>
-          </plist>
-          EOF
-
-          xcodebuild -exportArchive \
-            -archivePath build/CubeRun.xcarchive \
-            -exportPath build \
-            -exportOptionsPlist ExportOptions.plist || echo "IPA export failed (expected without signing team), continuing..."
-
-      - name: Upload IPA (if exists)
+      - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
           name: CubeRun-IPA
-          path: build/*.ipa
-          if-no-files-found: ignore
+          path: build/CubeRun.ipa
