@@ -32,6 +32,9 @@ final class CubeRunSession: ObservableObject {
     @Published var showPublishSheet = false
     @Published var browseLoadError: String?
 
+    /// Prevents overlapping scene swaps (e.g. double-tap Play) which can destabilize SpriteKit.
+    private var isSwappingScene = false
+
     init() {
         levelLocal = LevelModel.loadFromDisk() ?? LevelModel()
     }
@@ -40,7 +43,10 @@ final class CubeRunSession: ObservableObject {
         scene.onPlay = { [weak self, weak scene] in
             guard let self, let scene else { return }
             self.clearRemotePlay()
-            self.presentLocalPlaytest(size: scene.size)
+            // Touch may arrive on a SpriteKit-internal path; always hop to main explicitly.
+            DispatchQueue.main.async {
+                self.presentLocalPlaytest(size: scene.size)
+            }
         }
         scene.onBrowseOnline = { [weak self] in
             self?.showBrowseOnline = true
@@ -55,14 +61,12 @@ final class CubeRunSession: ObservableObject {
         let scene = EditorScene(size: size, level: levelLocal)
         scene.scaleMode = .resizeFill
         attachEditor(scene: scene)
-        // Defer so we never replace the scene synchronously from SpriteKit touch handling
-        // (that can crash inside presentScene / run loop).
-        DispatchQueue.main.async { [weak self] in
-            self?.activeScene = scene
-        }
+        commitSceneSwitch(scene)
     }
 
     func presentLocalPlaytest(size: CGSize) {
+        guard !isSwappingScene else { return }
+        isSwappingScene = true
         clearRemotePlay()
         let scene = GameScene(size: size, level: levelLocal)
         scene.scaleMode = .resizeFill
@@ -70,14 +74,16 @@ final class CubeRunSession: ObservableObject {
         scene.remoteDocumentId = nil
         scene.onExitToEditor = { [weak self, weak scene] in
             guard let self, let scene else { return }
-            self.presentEditor(size: scene.size)
+            DispatchQueue.main.async {
+                self.presentEditor(size: scene.size)
+            }
         }
-        DispatchQueue.main.async { [weak self] in
-            self?.activeScene = scene
-        }
+        commitSceneSwitch(scene)
     }
 
     func presentRemotePlaytest(size: CGSize, level: LevelModel, documentId: String) {
+        guard !isSwappingScene else { return }
+        isSwappingScene = true
         remotePlayLevel = level
         remoteDocumentId = documentId
         let scene = GameScene(size: size, level: level)
@@ -87,10 +93,19 @@ final class CubeRunSession: ObservableObject {
         scene.onExitToEditor = { [weak self, weak scene] in
             guard let self, let scene else { return }
             self.clearRemotePlay()
-            self.presentEditor(size: scene.size)
+            DispatchQueue.main.async {
+                self.presentEditor(size: scene.size)
+            }
         }
+        commitSceneSwitch(scene)
+    }
+
+    /// Apply scene after current run-loop work (SwiftUI layout + SpriteKit touch) finishes.
+    private func commitSceneSwitch(_ scene: SKScene) {
         DispatchQueue.main.async { [weak self] in
-            self?.activeScene = scene
+            guard let self else { return }
+            self.activeScene = scene
+            self.isSwappingScene = false
         }
     }
 
@@ -167,6 +182,7 @@ struct CubeRunRootView: View {
 struct SpriteKitHost: UIViewRepresentable {
     final class Coordinator {
         weak var view: SKView?
+        var lastPresentedScene: SKScene?
     }
 
     var scene: SKScene?
@@ -184,14 +200,23 @@ struct SpriteKitHost: UIViewRepresentable {
         context.coordinator.view = view
         if let scene {
             view.presentScene(scene)
+            context.coordinator.lastPresentedScene = scene
         }
         return view
     }
 
     func updateUIView(_ uiView: SKView, context: Context) {
         guard let scene else { return }
-        if uiView.scene !== scene {
-            uiView.presentScene(scene)
+        guard uiView.scene !== scene || context.coordinator.lastPresentedScene !== scene else { return }
+        // Never call presentScene synchronously from UIViewRepresentable updates — defer one turn.
+        uiView.scene?.isPaused = true
+        let coordinator = context.coordinator
+        DispatchQueue.main.async { [weak uiView] in
+            guard let uiView, !uiView.isHidden else { return }
+            if uiView.scene !== scene {
+                uiView.presentScene(scene)
+            }
+            coordinator.lastPresentedScene = scene
         }
     }
 }
