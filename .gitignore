@@ -1,0 +1,10 @@
+# Firebase (download from console; do not commit real project keys in public repos)
+Sources/GoogleService-Info.plist
+
+build/
+*.xcarchive
+*.ipa
+ExportOptions.plist
+.DS_Store
+xcuserdata/
+*.xcuserstate

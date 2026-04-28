@@ -1,0 +1,76 @@
+name: Build Cube Run
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Project
+        run: xcodegen generate
+
+      - name: Show Xcode Version
+        run: xcodebuild -version
+
+      - name: Build (NO signing)
+        run: |
+          xcodebuild \
+            -scheme "Cube Run Build Mode" \
+            -sdk iphoneos \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            clean build
+
+      - name: Archive
+        run: |
+          xcodebuild \
+            -scheme "Cube Run Build Mode" \
+            -sdk iphoneos \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            -archivePath build/CubeRun.xcarchive \
+            archive
+
+      - name: Upload Archive (ALWAYS)
+        uses: actions/upload-artifact@v4
+        with:
+          name: CubeRun-Archive
+          path: build/CubeRun.xcarchive
+
+      # IPA built manually (Payload/*.app + zip). No xcodebuild -exportArchive;
+      # that path requires signing metadata in the archive.
+      - name: Package IPA from archive
+        run: |
+          set -euo pipefail
+          # *.app is a directory; plain `ls *.app` lists contents — resolve bundle path explicitly.
+          APP=$(find build/CubeRun.xcarchive/Products/Applications -maxdepth 1 -type d -name "*.app" | head -n1)
+          if [ -z "$APP" ]; then
+            echo "No .app bundle under archive Products/Applications"
+            ls -la build/CubeRun.xcarchive/Products/Applications || true
+            exit 1
+          fi
+          echo "Packaging: $APP"
+          rm -rf build/ipa-staging
+          mkdir -p build/ipa-staging/Payload
+          cp -R "$APP" build/ipa-staging/Payload/
+          (cd build/ipa-staging && zip -qr ../CubeRun.ipa Payload)
+          rm -rf build/ipa-staging
+          ls -la build/CubeRun.ipa
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: CubeRun-IPA
+          path: build/CubeRun.ipa
