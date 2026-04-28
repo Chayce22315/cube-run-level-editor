@@ -55,7 +55,11 @@ final class CubeRunSession: ObservableObject {
         let scene = EditorScene(size: size, level: levelLocal)
         scene.scaleMode = .resizeFill
         attachEditor(scene: scene)
-        activeScene = scene
+        // Defer so we never replace the scene synchronously from SpriteKit touch handling
+        // (that can crash inside presentScene / run loop).
+        DispatchQueue.main.async { [weak self] in
+            self?.activeScene = scene
+        }
     }
 
     func presentLocalPlaytest(size: CGSize) {
@@ -68,7 +72,9 @@ final class CubeRunSession: ObservableObject {
             guard let self, let scene else { return }
             self.presentEditor(size: scene.size)
         }
-        activeScene = scene
+        DispatchQueue.main.async { [weak self] in
+            self?.activeScene = scene
+        }
     }
 
     func presentRemotePlaytest(size: CGSize, level: LevelModel, documentId: String) {
@@ -83,7 +89,9 @@ final class CubeRunSession: ObservableObject {
             self.clearRemotePlay()
             self.presentEditor(size: scene.size)
         }
-        activeScene = scene
+        DispatchQueue.main.async { [weak self] in
+            self?.activeScene = scene
+        }
     }
 
     func startOnlineLevel(documentId: String, size: CGSize) {
@@ -95,7 +103,10 @@ final class CubeRunSession: ObservableObject {
                 switch result {
                 case let .success(level):
                     self.showBrowseOnline = false
-                    self.presentRemotePlaytest(size: playSize, level: level, documentId: documentId)
+                    // Let SwiftUI finish dismissing the sheet before swapping scenes.
+                    DispatchQueue.main.async { [weak self] in
+                        self?.presentRemotePlaytest(size: playSize, level: level, documentId: documentId)
+                    }
                 case let .failure(err):
                     self.browseLoadError = err.localizedDescription
                 }
